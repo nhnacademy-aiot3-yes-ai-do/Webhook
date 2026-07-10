@@ -1,0 +1,118 @@
+name: discord-notify
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        required: true
+        type: string
+      build_result:
+        required: true
+        type: string
+      deploy_result:
+        required: true
+        type: string
+      repository:
+        required: true
+        type: string
+      branch:
+        required: true
+        type: string
+      commit_sha:
+        required: true
+        type: string
+      commit_message:
+        required: true
+        type: string
+      actor:
+        required: true
+        type: string
+      workflow_url:
+        required: true
+        type: string
+
+    secrets:
+      DISCORD_WEBHOOK_URL:
+        required: true
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Discord
+        env:
+          SERVICE_NAME: ${{ inputs.service_name }}
+          BUILD_RESULT: ${{ inputs.build_result }}
+          DEPLOY_RESULT: ${{ inputs.deploy_result }}
+          REPOSITORY: ${{ inputs.repository }}
+          BRANCH: ${{ inputs.branch }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          COMMIT_MESSAGE: ${{ inputs.commit_message }}
+          ACTOR: ${{ inputs.actor }}
+          WORKFLOW_URL: ${{ inputs.workflow_url }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ "$BUILD_RESULT" = "success" ] && [ "$DEPLOY_RESULT" = "success" ]; then
+            TITLE="${SERVICE_NAME} Kubernetes Deploy Success"
+            CONTENT="✅ ${SERVICE_NAME} 배포 성공"
+            DESCRIPTION="${SERVICE_NAME} rollout이 완료되었습니다."
+            COLOR="5763719"
+          elif [ "$BUILD_RESULT" = "cancelled" ] || [ "$DEPLOY_RESULT" = "cancelled" ] || [ "$BUILD_RESULT" = "skipped" ] || [ "$DEPLOY_RESULT" = "skipped" ]; then
+            TITLE="${SERVICE_NAME} CI/CD Cancelled or Skipped"
+            CONTENT="⚠️ ${SERVICE_NAME} 배포 취소/스킵"
+            DESCRIPTION="빌드 또는 배포 job이 취소되었거나 실행되지 않았습니다."
+            COLOR="16776960"
+          else
+            TITLE="${SERVICE_NAME} CI/CD Failed"
+            CONTENT="❌ ${SERVICE_NAME} 배포 실패"
+            DESCRIPTION="빌드, 이미지 push, 서버 SSH, kubectl apply 또는 rollout 중 실패했습니다."
+            COLOR="15548997"
+          fi
+
+          COMMIT_SHORT=$(echo "$COMMIT_SHA" | cut -c1-7)
+          COMMIT_MESSAGE_TRUNCATED="${COMMIT_MESSAGE:0:1024}"
+
+          jq -n \
+            --arg content "$CONTENT" \
+            --arg title "$TITLE" \
+            --arg description "$DESCRIPTION" \
+            --arg service "$SERVICE_NAME" \
+            --arg repository "$REPOSITORY" \
+            --arg branch "$BRANCH" \
+            --arg commit "$COMMIT_SHORT" \
+            --arg commitMessage "$COMMIT_MESSAGE_TRUNCATED" \
+            --arg actor "$ACTOR" \
+            --arg workflow "$WORKFLOW_URL" \
+            --arg buildResult "$BUILD_RESULT" \
+            --arg deployResult "$DEPLOY_RESULT" \
+            --argjson color "$COLOR" \
+            '{
+              content: $content,
+              embeds: [
+                {
+                  title: $title,
+                  description: $description,
+                  color: $color,
+                  fields: [
+                    { name: "Service", value: $service, inline: true },
+                    { name: "Repository", value: $repository, inline: true },
+                    { name: "Branch", value: $branch, inline: true },
+                    { name: "Commit", value: $commit, inline: true },
+                    { name: "Commit Message", value: $commitMessage, inline: false },
+                    { name: "Actor", value: $actor, inline: true },
+                    { name: "Build", value: $buildResult, inline: true },
+                    { name: "Deploy", value: $deployResult, inline: true },
+                    { name: "Workflow", value: $workflow, inline: false }
+                  ]
+                }
+              ]
+            }' > discord-payload.json
+
+          curl --fail --show-error --silent \
+            --connect-timeout 5 \
+            --max-time 15 \
+            --retry 2 \
+            --retry-delay 2 \
+            -H "Content-Type: application/json" \
+            -d @discord-payload.json \
+            "$DISCORD_WEBHOOK_URL" || echo "::warning::Discord notification failed. Build/deploy result is not changed by notification failure."
