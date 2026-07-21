@@ -3,13 +3,30 @@ name: discord-notify
 on:
   workflow_call:
     inputs:
-      service_name:
-        required: true
+      # 선택 입력으로 두는 이유는 SonarQube를 아직 사용하지 않는 다른 MSA 저장소도 기존 방식으로 Webhook을 호출할 수 있게 하기 위함
+      quality_result:
+        required: false
         type: string
+        default: not_configured
+
+      coverage_percentage:
+        required: false
+        type: string
+        default: not_available
+
+      sonar_url:
+        required: false
+        type: string
+        default: not_available
+
       coverage_result:
         required: false
         type: string
         default: not_configured
+
+      service_name:
+        required: true
+        type: string
       build_result:
         required: true
         type: string
@@ -47,6 +64,9 @@ jobs:
         env:
           SERVICE_NAME: ${{ inputs.service_name }}
           COVERAGE_RESULT: ${{ inputs.coverage_result }}
+          QUALITY_RESULT: ${{ inputs.quality_result }}
+          COVERAGE_PERCENTAGE: ${{ inputs.coverage_percentage }}
+          SONAR_URL: ${{ inputs.sonar_url }}
           BUILD_RESULT: ${{ inputs.build_result }}
           DEPLOY_RESULT: ${{ inputs.deploy_result }}
           REPOSITORY: ${{ inputs.repository }}
@@ -61,6 +81,11 @@ jobs:
             TITLE="${SERVICE_NAME} Coverage Check Failed"
             CONTENT="❌ ${SERVICE_NAME} 테스트 커버리지 미달"
             DESCRIPTION="JaCoCo 라인 커버리지가 프로젝트 기준인 40%를 충족하지 못했습니다."
+            COLOR="15548997"
+          elif [ "$QUALITY_RESULT" = "failure" ]; then
+            TITLE="${SERVICE_NAME} Quality Check Failed"
+            CONTENT="❌ ${SERVICE_NAME} 품질 검사 실패"
+            DESCRIPTION="테스트 또는 SonarQube Quality Gate를 통과하지 못했습니다."
             COLOR="15548997"
           elif [ "$BUILD_RESULT" = "failure" ]; then
             TITLE="${SERVICE_NAME} Image Build Failed"
@@ -82,7 +107,11 @@ jobs:
             CONTENT="⚠️ ${SERVICE_NAME} 실행 스킵"
             DESCRIPTION="품질 검사, 빌드 또는 배포 job이 실행되지 않았습니다."
             COLOR="16776960"
-          elif { [ "$COVERAGE_RESULT" = "success" ] || [ "$COVERAGE_RESULT" = "not_configured" ]; } && [ "$BUILD_RESULT" = "success" ] && [ "$DEPLOY_RESULT" = "success" ]; then
+          elif { [ "$QUALITY_RESULT" = "success" ] || [ "$QUALITY_RESULT" = "not_configured" ]; } \
+            && { [ "$COVERAGE_RESULT" = "success" ] || [ "$COVERAGE_RESULT" = "not_configured" ]; } \
+            && [ "$BUILD_RESULT" = "success" ] \
+            && [ "$DEPLOY_RESULT" = "success" ]; then
+            
             TITLE="${SERVICE_NAME} Kubernetes Deploy Success"
             CONTENT="✅ ${SERVICE_NAME} 배포 성공"
             DESCRIPTION="${SERVICE_NAME} rollout이 완료되었습니다."
@@ -92,6 +121,20 @@ jobs:
             CONTENT="⚠️ ${SERVICE_NAME} 상태 확인 필요"
             DESCRIPTION="예상하지 못한 job 상태가 전달되었습니다."
             COLOR="16776960"
+          fi
+          
+          if [ -n "$COVERAGE_PERCENTAGE" ] \
+            && [ "$COVERAGE_PERCENTAGE" != "not_available" ]; then
+            COVERAGE_DISPLAY="${COVERAGE_RESULT} (${COVERAGE_PERCENTAGE}%)"
+          else
+            COVERAGE_DISPLAY="$COVERAGE_RESULT"
+          fi
+          
+          if [ -n "$SONAR_URL" ] \
+            && [ "$SONAR_URL" != "not_available" ]; then
+            SONAR_DISPLAY="[상세 분석 열기](${SONAR_URL})"
+          else
+            SONAR_DISPLAY="not_available"
           fi
 
           COMMIT_SHORT=$(echo "$COMMIT_SHA" | cut -c1-7)
@@ -109,6 +152,9 @@ jobs:
             --arg actor "$ACTOR" \
             --arg workflow "$WORKFLOW_URL" \
             --arg coverageResult "$COVERAGE_RESULT" \
+            --arg qualityResult "$QUALITY_RESULT" \
+            --arg coverageDisplay "$COVERAGE_DISPLAY" \
+            --arg sonarDisplay "$SONAR_DISPLAY" \
             --arg buildResult "$BUILD_RESULT" \
             --arg deployResult "$DEPLOY_RESULT" \
             --argjson color "$COLOR" \
@@ -126,9 +172,11 @@ jobs:
                     { name: "Commit", value: $commit, inline: true },
                     { name: "Commit Message", value: $commitMessage, inline: false },
                     { name: "Actor", value: $actor, inline: true },
+                    { name: "Quality", value: $qualityResult, inline: true },
                     { name: "Coverage", value: $coverageResult, inline: true },
                     { name: "Build", value: $buildResult, inline: true },
                     { name: "Deploy", value: $deployResult, inline: true },
+                    { name: "SonarQube", value: $sonarDisplay, inline: false },
                     { name: "Workflow", value: $workflow, inline: false }
                   ]
                 }
