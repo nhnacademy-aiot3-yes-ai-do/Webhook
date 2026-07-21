@@ -6,6 +6,10 @@ on:
       service_name:
         required: true
         type: string
+      coverage_result:
+        required: false
+        type: string
+        default: not_configured
       build_result:
         required: true
         type: string
@@ -42,6 +46,7 @@ jobs:
       - name: Notify Discord
         env:
           SERVICE_NAME: ${{ inputs.service_name }}
+          COVERAGE_RESULT: ${{ inputs.coverage_result }}
           BUILD_RESULT: ${{ inputs.build_result }}
           DEPLOY_RESULT: ${{ inputs.deploy_result }}
           REPOSITORY: ${{ inputs.repository }}
@@ -52,21 +57,41 @@ jobs:
           WORKFLOW_URL: ${{ inputs.workflow_url }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          if [ "$BUILD_RESULT" = "success" ] && [ "$DEPLOY_RESULT" = "success" ]; then
+          if [ "$COVERAGE_RESULT" = "failure" ]; then
+            TITLE="${SERVICE_NAME} Coverage Check Failed"
+            CONTENT="❌ ${SERVICE_NAME} 테스트 커버리지 미달"
+            DESCRIPTION="JaCoCo 라인 커버리지가 프로젝트 기준인 40%를 충족하지 못했습니다."
+            COLOR="15548997"
+          elif [ "$BUILD_RESULT" = "failure" ]; then
+            TITLE="${SERVICE_NAME} Image Build Failed"
+            CONTENT="❌ ${SERVICE_NAME} 이미지 빌드 실패"
+            DESCRIPTION="컨테이너 이미지 빌드 또는 GHCR push 단계에서 실패했습니다."
+            COLOR="15548997"
+          elif [ "$DEPLOY_RESULT" = "failure" ]; then
+            TITLE="${SERVICE_NAME} Kubernetes Deploy Failed"
+            CONTENT="❌ ${SERVICE_NAME} 배포 실패"
+            DESCRIPTION="서버 SSH, kubectl apply, rollout 또는 rollback 단계에서 실패했습니다."
+            COLOR="15548997"
+          elif [ "$COVERAGE_RESULT" = "cancelled" ] || [ "$BUILD_RESULT" = "cancelled" ] || [ "$DEPLOY_RESULT" = "cancelled" ]; then
+            TITLE="${SERVICE_NAME} CI/CD Cancelled"
+            CONTENT="⚠️ ${SERVICE_NAME} 실행 취소"
+            DESCRIPTION="품질 검사, 빌드 또는 배포 job이 취소되었습니다."
+            COLOR="16776960"
+          elif [ "$COVERAGE_RESULT" = "skipped" ] || [ "$BUILD_RESULT" = "skipped" ] || [ "$DEPLOY_RESULT" = "skipped" ]; then
+            TITLE="${SERVICE_NAME} CI/CD Skipped"
+            CONTENT="⚠️ ${SERVICE_NAME} 실행 스킵"
+            DESCRIPTION="품질 검사, 빌드 또는 배포 job이 실행되지 않았습니다."
+            COLOR="16776960"
+          elif { [ "$COVERAGE_RESULT" = "success" ] || [ "$COVERAGE_RESULT" = "not_configured" ]; } && [ "$BUILD_RESULT" = "success" ] && [ "$DEPLOY_RESULT" = "success" ]; then
             TITLE="${SERVICE_NAME} Kubernetes Deploy Success"
             CONTENT="✅ ${SERVICE_NAME} 배포 성공"
             DESCRIPTION="${SERVICE_NAME} rollout이 완료되었습니다."
             COLOR="5763719"
-          elif [ "$BUILD_RESULT" = "cancelled" ] || [ "$DEPLOY_RESULT" = "cancelled" ] || [ "$BUILD_RESULT" = "skipped" ] || [ "$DEPLOY_RESULT" = "skipped" ]; then
-            TITLE="${SERVICE_NAME} CI/CD Cancelled or Skipped"
-            CONTENT="⚠️ ${SERVICE_NAME} 배포 취소/스킵"
-            DESCRIPTION="빌드 또는 배포 job이 취소되었거나 실행되지 않았습니다."
-            COLOR="16776960"
           else
-            TITLE="${SERVICE_NAME} CI/CD Failed"
-            CONTENT="❌ ${SERVICE_NAME} 배포 실패"
-            DESCRIPTION="빌드, 이미지 push, 서버 SSH, kubectl apply 또는 rollout 중 실패했습니다."
-            COLOR="15548997"
+            TITLE="${SERVICE_NAME} CI/CD Unknown"
+            CONTENT="⚠️ ${SERVICE_NAME} 상태 확인 필요"
+            DESCRIPTION="예상하지 못한 job 상태가 전달되었습니다."
+            COLOR="16776960"
           fi
 
           COMMIT_SHORT=$(echo "$COMMIT_SHA" | cut -c1-7)
@@ -83,6 +108,7 @@ jobs:
             --arg commitMessage "$COMMIT_MESSAGE_TRUNCATED" \
             --arg actor "$ACTOR" \
             --arg workflow "$WORKFLOW_URL" \
+            --arg coverageResult "$COVERAGE_RESULT" \
             --arg buildResult "$BUILD_RESULT" \
             --arg deployResult "$DEPLOY_RESULT" \
             --argjson color "$COLOR" \
@@ -100,6 +126,7 @@ jobs:
                     { name: "Commit", value: $commit, inline: true },
                     { name: "Commit Message", value: $commitMessage, inline: false },
                     { name: "Actor", value: $actor, inline: true },
+                    { name: "Coverage", value: $coverageResult, inline: true },
                     { name: "Build", value: $buildResult, inline: true },
                     { name: "Deploy", value: $deployResult, inline: true },
                     { name: "Workflow", value: $workflow, inline: false }
