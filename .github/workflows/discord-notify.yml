@@ -173,7 +173,7 @@ jobs:
                     { name: "Commit Message", value: $commitMessage, inline: false },
                     { name: "Actor", value: $actor, inline: true },
                     { name: "Quality", value: $qualityResult, inline: true },
-                    { name: "Coverage", value: $coverageResult, inline: true },
+                    { name: "Coverage", value: $coverageDisplay, inline: true },
                     { name: "Build", value: $buildResult, inline: true },
                     { name: "Deploy", value: $deployResult, inline: true },
                     { name: "SonarQube", value: $sonarDisplay, inline: false },
