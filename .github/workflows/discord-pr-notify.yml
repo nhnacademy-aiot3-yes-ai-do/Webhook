@@ -1,0 +1,62 @@
+name: discord-pr-notify
+
+on:
+  workflow_call:
+    inputs:
+      service_name: { required: true, type: string }
+      pr_number: { required: true, type: number }
+      pr_title: { required: true, type: string }
+      pr_url: { required: true, type: string }
+      author: { required: true, type: string }
+      base_branch: { required: true, type: string }
+      head_branch: { required: true, type: string }
+    secrets:
+      DISCORD_PR_WEBHOOK_URL:
+        required: true
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord PR review request
+        env:
+          SERVICE: ${{ inputs.service_name }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          PR_TITLE: ${{ inputs.pr_title }}
+          PR_URL: ${{ inputs.pr_url }}
+          AUTHOR: ${{ inputs.author }}
+          BASE_BRANCH: ${{ inputs.base_branch }}
+          HEAD_BRANCH: ${{ inputs.head_branch }}
+          WEBHOOK_URL: ${{ secrets.DISCORD_PR_WEBHOOK_URL }}
+        run: |
+          TITLE="[PR #${PR_NUMBER}] ${PR_TITLE}"
+          TITLE="${TITLE:0:256}"
+
+          jq -n \
+            --arg content "🔍 ${SERVICE} PR 리뷰 요청" \
+            --arg title "$TITLE" \
+            --arg author "$AUTHOR" \
+            --arg branch "${HEAD_BRANCH} → ${BASE_BRANCH}" \
+            --arg link "[PR 검토하기](${PR_URL})" \
+            '{
+              content: $content,
+              allowed_mentions: {parse: []},
+              embeds: [{
+                title: $title,
+                description: "새 Pull Request가 리뷰 가능한 상태입니다.",
+                color: 5793266,
+                fields: [
+                  {name: "Author", value: $author, inline: true},
+                  {name: "Merge", value: $branch, inline: true},
+                  {name: "Pull Request", value: $link, inline: false}
+                ]
+              }]
+            }' > discord-payload.json
+
+          curl --fail --show-error --silent \
+            --connect-timeout 5 --max-time 15 \
+            --retry 2 --retry-delay 2 \
+            -H "Content-Type: application/json" \
+            -d @discord-payload.json \
+            "$WEBHOOK_URL" \
+            || echo "::warning::Discord PR notification failed."
