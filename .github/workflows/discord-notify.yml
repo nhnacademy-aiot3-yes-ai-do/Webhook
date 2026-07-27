@@ -19,6 +19,11 @@ on:
         type: string
         default: not_available
 
+      coverage_result:
+        required: false
+        type: string
+        default: not_configured
+
       sonar_url:
         required: false
         type: string
@@ -81,7 +86,11 @@ jobs:
           if [ "$COVERAGE_RESULT" = "failure" ]; then
             TITLE="${SERVICE_NAME} Coverage Check Failed"
             CONTENT="❌ ${SERVICE_NAME} 테스트 커버리지 미달"
-            DESCRIPTION="JaCoCo 라인 커버리지가 프로젝트 기준인 ${COVERAGE_THRESHOLD}%를 충족하지 못했습니다."
+            if [ "$COVERAGE_THRESHOLD" != "not_available" ]; then
+              DESCRIPTION="JaCoCo 라인 커버리지가 프로젝트 기준인 ${COVERAGE_THRESHOLD}%를 충족하지 못했습니다."
+            else
+              DESCRIPTION="JaCoCo 라인 커버리지가 프로젝트 기준을 충족하지 못했습니다."
+            fi
             COLOR="15548997"
           elif [ "$QUALITY_RESULT" = "failure" ]; then
             TITLE="${SERVICE_NAME} Quality Check Failed"
