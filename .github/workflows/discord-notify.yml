@@ -14,15 +14,15 @@ on:
         type: string
         default: not_available
 
-      sonar_url:
+      coverage_threshold:
         required: false
         type: string
         default: not_available
 
-      coverage_result:
+      sonar_url:
         required: false
         type: string
-        default: not_configured
+        default: not_available
 
       service_name:
         required: true
@@ -64,6 +64,7 @@ jobs:
         env:
           SERVICE_NAME: ${{ inputs.service_name }}
           COVERAGE_RESULT: ${{ inputs.coverage_result }}
+          COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold }}
           QUALITY_RESULT: ${{ inputs.quality_result }}
           COVERAGE_PERCENTAGE: ${{ inputs.coverage_percentage }}
           SONAR_URL: ${{ inputs.sonar_url }}
@@ -80,7 +81,7 @@ jobs:
           if [ "$COVERAGE_RESULT" = "failure" ]; then
             TITLE="${SERVICE_NAME} Coverage Check Failed"
             CONTENT="❌ ${SERVICE_NAME} 테스트 커버리지 미달"
-            DESCRIPTION="JaCoCo 라인 커버리지가 프로젝트 기준인 40%를 충족하지 못했습니다."
+            DESCRIPTION="JaCoCo 라인 커버리지가 프로젝트 기준인 ${COVERAGE_THRESHOLD}%를 충족하지 못했습니다."
             COLOR="15548997"
           elif [ "$QUALITY_RESULT" = "failure" ]; then
             TITLE="${SERVICE_NAME} Quality Check Failed"
@@ -123,9 +124,12 @@ jobs:
             COLOR="16776960"
           fi
           
-          if [ -n "$COVERAGE_PERCENTAGE" ] \
-            && [ "$COVERAGE_PERCENTAGE" != "not_available" ]; then
-            COVERAGE_DISPLAY="${COVERAGE_RESULT} (${COVERAGE_PERCENTAGE}%)"
+          if [ "$COVERAGE_PERCENTAGE" != "not_available" ]; then
+            if [ "$COVERAGE_THRESHOLD" != "not_available" ]; then
+              COVERAGE_DISPLAY="${COVERAGE_RESULT} (${COVERAGE_PERCENTAGE}% / ${COVERAGE_THRESHOLD}%)"
+            else
+              COVERAGE_DISPLAY="${COVERAGE_RESULT} (${COVERAGE_PERCENTAGE}%)"
+            fi
           else
             COVERAGE_DISPLAY="$COVERAGE_RESULT"
           fi
